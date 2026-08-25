@@ -47,6 +47,32 @@ def test_output_text_delta_to_chat_chunk():
     assert any("chat.completion.chunk" in chunk for chunk in chunks)
 
 
+def test_stream_chunks_share_one_unique_completion_id_per_request():
+    lines = [
+        'data: {"type":"response.output_text.delta","delta":"first"}\n\n',
+        'data: {"type":"response.output_text.delta","delta":" second"}\n\n',
+        'data: {"type":"response.completed","response":{"id":"r1"}}\n\n',
+    ]
+
+    def completion_ids(chunks: list[str]) -> list[str]:
+        return [
+            json.loads(chunk[6:])["id"]
+            for chunk in chunks
+            if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]"
+        ]
+
+    first_ids = completion_ids(list(iter_chat_chunks(lines, model="gpt-5.2")))
+    second_ids = completion_ids(list(iter_chat_chunks(lines, model="gpt-5.2")))
+
+    assert first_ids
+    assert len(set(first_ids)) == 1
+    assert first_ids[0].startswith("chatcmpl-")
+    assert first_ids[0] != "chatcmpl_temp"
+    assert second_ids
+    assert len(set(second_ids)) == 1
+    assert second_ids[0] != first_ids[0]
+
+
 def test_output_text_delta_emits_role_once():
     lines = [
         'data: {"type":"response.output_text.delta","delta":"hi"}\n\n',

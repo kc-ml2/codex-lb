@@ -4,6 +4,7 @@ import time
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -179,8 +180,14 @@ class ToolCallIndex:
             self.output_index_map[output_index] = index
 
 
+def _new_chat_completion_id() -> str:
+    """Return one OpenAI-compatible ID for a single chat completion."""
+    return f"codexlb-chatcmpl-{uuid4()}"
+
+
 @dataclass
 class _ChatChunkState:
+    completion_id: str = field(default_factory=_new_chat_completion_id)
     tool_index: ToolCallIndex = field(default_factory=ToolCallIndex)
     tool_calls: list["ToolCallState"] = field(default_factory=list)
     saw_tool_call: bool = False
@@ -306,7 +313,7 @@ def iter_chat_chunks(
                     content=delta_text if isinstance(delta_text, str) else None,
                 )
             chunk = ChatCompletionChunk(
-                id="chatcmpl_temp",
+                id=state.completion_id,
                 created=created,
                 model=model,
                 choices=[
@@ -330,7 +337,7 @@ def iter_chat_chunks(
                 if not state.sent_role:
                     role = "assistant"
                 chunk = ChatCompletionChunk(
-                    id="chatcmpl_temp",
+                    id=state.completion_id,
                     created=created,
                     model=model,
                     choices=[
@@ -374,7 +381,7 @@ def iter_chat_chunks(
                 if not state.sent_role:
                     role = "assistant"
                 chunk = ChatCompletionChunk(
-                    id="chatcmpl_temp",
+                    id=state.completion_id,
                     created=created,
                     model=model,
                     choices=[
@@ -400,7 +407,7 @@ def iter_chat_chunks(
             if event_type == "response.incomplete" and not state.saw_tool_call:
                 finish_reason = _finish_reason_from_incomplete(payload.get("response"))
             done = ChatCompletionChunk(
-                id="chatcmpl_temp",
+                id=state.completion_id,
                 created=created,
                 model=model,
                 choices=[
@@ -414,7 +421,7 @@ def iter_chat_chunks(
             yield _dump_chunk(done, include_usage=include_usage)
             if include_usage:
                 usage_chunk = ChatCompletionChunk(
-                    id="chatcmpl_temp",
+                    id=state.completion_id,
                     created=created,
                     model=model,
                     choices=[],
@@ -520,7 +527,7 @@ async def collect_chat_completion(stream: AsyncIterator[str], model: str) -> Cha
         finish_reason=finish_reason,
     )
     completion = ChatCompletion(
-        id=response_id or "chatcmpl_temp",
+        id=response_id or _new_chat_completion_id(),
         created=created,
         model=model,
         choices=[choice],
