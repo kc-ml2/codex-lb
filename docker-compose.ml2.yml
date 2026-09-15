@@ -32,9 +32,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 4G
         reservations:
-          memory: 256M
+          memory: 1G
 
   server-dev:
     profiles: ["dev"]
