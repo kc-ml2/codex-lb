@@ -36,6 +36,82 @@ services:
         reservations:
           memory: 256M
 
+  server-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codex-lb-dev-server:latest
+    pull_policy: build
+    env_file:
+      - .env.dev.local
+    ports:
+      - "1456:1455"
+      - "2456:2455"
+    command:
+      - python
+      - -m
+      - app.cli
+      - --host
+      - 0.0.0.0
+      - --port
+      - "2455"
+      - --ws-max-size
+      - "134217728"
+    volumes:
+      - codex-lb-dev-data:/var/lib/codex-lb
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./app
+          target: /app/app
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
+        - action: rebuild
+          path: ./Dockerfile
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2455/health/ready')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend-dev:
+    profiles: ["dev"]
+    build:
+      context: ./frontend
+      dockerfile_inline: |
+        FROM oven/bun:1.4.2-alpine
+        WORKDIR /app
+        COPY package.json bun.lock ./
+        RUN bun install --frozen-lockfile
+        COPY . .
+        CMD ["bun", "run", "dev", "--host", "0.0.0.0"]
+    image: codex-lb-dev-frontend:latest
+    pull_policy: build
+    ports:
+      - "5174:5173"
+    environment:
+      API_PROXY_TARGET: http://server-dev:2455
+    depends_on:
+      server-dev:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/bun.lock
+    restart: unless-stopped
+
 networks:
   default:
     driver: bridge
@@ -43,3 +119,5 @@ networks:
 volumes:
   codex-lb-data:
     name: codex-lb-data
+  codex-lb-dev-data:
+    name: codex-lb-dev-data
